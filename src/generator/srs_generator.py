@@ -1,105 +1,114 @@
+"""SRS Generator - Generates SRS documents using Gemini AI."""
+
+import os
+from typing import Optional
 from google import genai
 from dotenv import load_dotenv
-import os
+
+from src.templates import TemplateRegistry, get_template
+
 load_dotenv()
-client = genai.Client(api_key=os.getenv("GOOGLE_GEMINI_API_KEY"))
 
-user_input=input("enter the requirement :")
 
-response = client.models.generate_content(
-    model="gemini-3-flash-preview",
-    contents=f'''You are a Software Requirements Engineer experienced in Agile methodology by default but if user is mentioning for IEEE format then give in IEEE format.
-
-            Generate a Extensive Software Requirements Specification (SRS) document in given format for the following system:
-            [Insert Project Title & Short Description Here]
-
-            Follow respective principles (iterative development, customer focus, adaptability).
-
-            The SRS should be clear, structured, and suitable for academic submission and real-world development.
-
-            {user_input}
-
-            Include the following sections:
-
-            1. Introduction
-
-            Purpose of the document
-
-            Scope of the system
-
-            Definitions, acronyms, and abbreviations
-
-            References
+class SRSGenerator:
+    """SRS Document Generator using Google Gemini AI."""
+    
+    def __init__(self, api_key: Optional[str] = None):
+        """Initialize the SRS Generator.
+        
+        Args:
+            api_key: Optional Gemini API key. If not provided, uses GOOGLE_GEMINI_API_KEY env var.
+        """
+        self.api_key = api_key or os.getenv("GOOGLE_GEMINI_API_KEY")
+        self.gemini_model = os.getenv("GEMINI_MODEL")
+        if not self.api_key:
+            raise ValueError("Gemini API key is required. Set GOOGLE_GEMINI_API_KEY environment variable or pass api_key parameter.")
+        
+        self.client = genai.Client(api_key=self.api_key)
+        self.model = self.gemini_model
+    
+    def generate(
+        self, 
+        user_requirement: str, 
+        template_name: Optional[str] = None,
+        custom_instructions: Optional[str] = None
+    ) -> dict:
+        """Generate an SRS document based on user requirements.
+        
+        Args:
+            user_requirement: The user's project/product requirements
+            template_name: Optional template name (agile, ieee, minimal, startup)
+                          If not provided, auto-detects based on requirement content
+            custom_instructions: Optional additional instructions for generation
+        
+        Returns:
+            dict containing:
+                - srs_document: The generated SRS in Markdown format
+                - template_used: The template that was used
+                - metadata: Additional metadata about the generation
+        """
+        # Auto-detect or use provided template
+        if template_name:
+            selected_template = template_name.lower()
+        else:
+            selected_template = TemplateRegistry.get_template_for_requirement(user_requirement)
+        
+        # Get the template
+        template = get_template(selected_template)
+        if not template:
+            # Fallback to agile if template not found
+            template = get_template("agile")
+            selected_template = "agile"
+        
+        # Build the prompt
+        prompt = template.get_prompt_template().format(user_requirement=user_requirement)
+        
+        # Add custom instructions if provided
+        if custom_instructions:
+            prompt += f"\n\n**Additional Instructions:**\n{custom_instructions}"
+        
+        # Generate using Gemini
+        try:
+            response = self.client.models.generate_content(
+                model=self.model,
+                contents=prompt
+            )
             
-            2. Agile Overview
-
-            Agile approach used (Scrum / Kanban / Hybrid)
-
-            Product vision
-
-            Stakeholders
-
-            Agile roles (Product Owner, Scrum Master, Development Team)
-
-            3. User Personas
-
-            Description of different user types
-
-            4. Product Backlog (User Stories)
-
-            User stories in the format:
-            As a [user], I want [feature], so that [benefit]
-
-            Priority (High / Medium / Low)
-
-            Acceptance criteria for each user story
-
-            5. Functional Requirements
-
-            Derived from user stories
-
-            Clearly numbered and traceable
-
-            6. Non-Functional Requirements
-
-            Performance
-
-            Security
-
-            Usability
-
-            Scalability
-
-            Reliability
-
-            7. Sprint Planning Overview
-
-            Sprint duration
-
-            Sample sprint backlog
-
-            Release planning summary
-
-            8. System Constraints and Assumptions
-
-            Technical constraints
-
-            Business constraints
-
-            Assumptions
-
-            9. Requirement Traceability Matrix (RTM)
-
-            Mapping user stories to functional requirements
-
-            10. Future Enhancements
-
-            Features planned for later iterations
-
-            Use simple language, bullet points, and tables where appropriate.
-            Do not include UML diagrams unless explicitly asked.
-
-            Ensure the output follows an Agile mindset, not a traditional waterfall SRS.''')
-
-
-print(response.text if hasattr(response, 'text') else str(response))
+            srs_document = response.text
+            
+            return {
+                "success": True,
+                "srs_document": srs_document,
+                "template_used": selected_template,
+                "template_description": template.description,
+                "sections": template.sections,
+                "validation_criteria": template.get_validation_criteria(),
+                "metadata": {
+                    "model": self.model,
+                    "user_requirement_length": len(user_requirement),
+                    "output_length": len(srs_document)
+                }
+            }
+        except Exception as e:
+            return {
+                "success": False,
+                "error": str(e),
+                "template_used": selected_template,
+                "srs_document": None
+            }
+    
+    def list_available_templates(self) -> list:
+        """List all available SRS templates."""
+        return TemplateRegistry.list_templates()
+    
+    def get_template_info(self, template_name: str) -> Optional[dict]:
+        """Get information about a specific template."""
+        template = get_template(template_name)
+        if template:
+            return {
+                "name": template.name,
+                "description": template.description,
+                "sections": template.get_sections(),
+                "validation_criteria": template.get_validation_criteria()
+            }
+        return None
