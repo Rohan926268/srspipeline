@@ -66,7 +66,7 @@ class SRSGenerator:
         # Add custom instructions if provided
         if custom_instructions:
             prompt += f"\n\n**Additional Instructions:**\n{custom_instructions}"
-        
+        prompt+= template + prompt  
         # Generate using Gemini
         try:
             response = self.client.models.generate_content(

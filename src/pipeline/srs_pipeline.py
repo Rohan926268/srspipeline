@@ -1,5 +1,3 @@
-"""SRS Pipeline - Orchestrates the complete SRS generation and validation flow."""
-
 import os
 from typing import Optional, List
 from dotenv import load_dotenv
